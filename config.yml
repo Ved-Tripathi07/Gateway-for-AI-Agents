@@ -1,0 +1,94 @@
+# Central configuration for the LLM gateway.
+# Secrets never live here - API keys stay in .env.
+
+# Provider prefix of a LiteLLM model id -> environment variable holding its key.
+# A model is dropped from routing when its provider key is missing.
+providers:
+  gemini: GEMINI_API_KEY
+  groq: GROQ_API_KEY
+  openai: OPENAI_API_KEY
+
+# Models backing each tier, cheapest-capable first.
+# The first entry carries the highest weight and serves most of the traffic;
+# the later entries absorb retries, rate limits and outages.
+# Prices below are $ per 1M input tokens, from litellm.model_cost.
+tiers:
+  simple:
+    - groq/openai/gpt-oss-20b      # 0.075
+    - gemini/gemini-3.1-flash-lite # 0.25
+    - gemini/gemini-3.6-flash      # 0.75
+  complex:
+    - gemini/gemini-3.8-flash       # 0.75
+    - groq/openai/gpt-oss-120b      # 0.15
+    - gemini/gemini-3.1-pro-preview # 2.00, strongest but free-tier quota is 0
+
+# LiteLLM Router behaviour.
+router:
+  # Weighted random pick inside a tier.
+  # Alternatives: least-busy, usage-based-routing-v2, latency-based-routing.
+  routing_strategy: simple-shuffle
+  # Attempts on other deployments of the same tier before falling back to the other tier.
+  num_retries: 2
+  # Seconds a deployment is parked after a failure or rate limit.
+  cooldown_time: 60
+  # Skip deployments whose context window is too small for the prompt.
+  enable_pre_call_checks: true
+
+# How a prompt is mapped to a tier when the caller does not pass tier_level.
+classification:
+  simple_tier: simple
+  complex_tier: complex
+  # Prompts at or above this many characters go straight to the complex tier.
+  char_threshold: 400
+  # A fenced code block also marks a request as complex.
+  code_block_marker: "```"
+  # Case-insensitive substrings that mark a request as complex.
+  keywords:
+    - analyze
+    - analyse
+    - architecture
+    - compare
+    - debug
+    - derive
+    - design
+    - evaluate
+    - in detail
+    - optimize
+    - plan
+    - prove
+    - reason
+    - refactor
+    - research
+    - step by step
+    - strategy
+    - trade-off
+    - tradeoff
+    - write code
+
+# Used when a call passes fallback=True.
+fallback:
+  # Models tried, in order, when a pinned model fails (tier=False).
+  # Leave empty to use every tier model that has credentials, simple tier first.
+  models: []
+  # Most models tried for one request, counting the first attempt. 0 means no limit.
+  max_attempts: 3
+
+# Applied to every chat request unless the caller overrides them.
+defaults:
+  temperature: 0.7
+  max_tokens: 1024
+  # Seconds a single provider attempt may run before it is aborted.
+  timeout: 60
+
+# Values attached to Langfuse traces.
+observability:
+  application: llm-gateway
+  environment: development
+
+# Cost of each request is compared against a baseline model to estimate savings.
+cost:
+  # Log one cost line per request.
+  log: true
+  # Model the savings are measured against.
+  # Leave empty to use the first model of the complex tier.
+  baseline_model: "gemini/gemini-3.1-pro-preview"

@@ -1,0 +1,16 @@
+# Secrets must never enter the image; they are passed at runtime.
+.env
+*.env
+
+.venv/
+__pycache__/
+*.py[oc]
+.git/
+.gitignore
+.python-version
+
+tests/
+Fallbacks/
+README.md
+Dockerfile
+.dockerignore
